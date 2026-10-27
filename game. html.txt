@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>সাইকেল রাইডার - Cycle Rider Challenge</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+    body {
+      background-color: #1a1a1a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+      color: white;
+      overflow: hidden;
+    }
+    #game-container {
+      position: relative;
+      width: 360px;
+      height: 600px;
+      background: #444;
+      border: 4px solid #fff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    /* UI Overlay */
+    .hud {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      font-weight: bold;
+      text-shadow: 1px 1px 2px black;
+      z-index: 10;
+    }
+    .penalty-text {
+      color: #ff4d4d;
+    }
+    .coin-text {
+      color: #ffd700;
+    }
+    /* Mobile Touch Controls */
+    .controls {
+      position: absolute;
+      bottom: 20px;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: space-around;
+      z-index: 10;
+    }
+    .btn {
+      background: rgba(255, 255, 255, 0.25);
+      border: 2px solid white;
+      color: white;
+      font-size: 26px;
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(4px);
+    }
+    .btn:active {
+      background: rgba(255, 255, 255, 0.6);
+      transform: scale(0.95);
+    }
+    /* Modal Popups (Shop & Game Over) */
+    .modal {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+      text-align: center;
+      padding: 20px;
+    }
+    .modal h2 { margin-bottom: 10px; }
+    .modal button {
+      background: #27ae60;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      font-size: 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin: 8px 0;
+      font-weight: bold;
+    }
+    .modal button:disabled {
+      background: #7f8c8d;
+      cursor: not-allowed;
+    }
+    .shop-btn {
+      position: absolute;
+      top: 45px;
+      right: 10px;
+      background: #e67e22;
+      border: none;
+      color: white;
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="game-container">
+    <div class="hud">
+      <div class="coin-text">🪙 কয়েন: <span id="coin-val">0</span></div>
+      <div class="penalty-text">⚠️ পেনাল্টি: <span id="penalty-val">0</span> / 5000</div>
+    </div>
+    
+    <button class="shop-btn" onclick="openShop()">🚲 আপগ্রেড</button>
+
+    <canvas id="gameCanvas" width="360" height="600"></canvas>
+
+    <!-- Mobile Buttons -->
+    <div class="controls">
+      <div class="btn" id="btn-left">⬅️</div>
+      <div class="btn" id="btn-right">➡️</div>
+    </div>
+
+    <!-- Shop Modal -->
+    <div id="shopModal" class="modal" style="display: none;">
+      <h2>🚲 সাইকেল আপগ্রেড</h2>
+      <p style="margin-bottom: 15px;">কয়েন দিয়ে সাইকেল শক্তিশালী করো!</p>
+      <button id="up-speed-btn" onclick="upgradeSpeed()">গতি বাড়াও (খরচ: ১৫ কয়েন)</button>
+      <button id="up-shield-btn" onclick="upgradeShield()">বর্ম/হেলমেট (খরচ: ২০ কয়েন)</button>
+      <p style="font-size: 12px; margin-top: 10px; color: #bbb;">* হেলমেট কিনলে ধাক্কায় পয়েন্ট কম কাটবে!</p>
+      <button style="background: #e74c3c; margin-top: 20px;" onclick="closeShop()">খেলায় ফিরে যান</button>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div id="gameOverModal" class="modal" style="display: none;">
+      <h2 style="color: #e74c3c;">গেম ওভার!</h2>
+      <p>তুমি মোট ৫০০০ পয়েন্ট মাইনাস খেয়েছ!</p>
+      <p style="margin: 15px 0; font-size: 18px;">মোট সংগৃহীত কয়েন: <span id="final-coins" style="color: #ffd700; font-weight: bold;">0</span></p>
+      <button onclick="restartGame()">১ম থেকে শুরু করুন</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Web Audio Sound Generator (No external files needed)
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+
+    function initAudio() {
+      if (!audioCtx) audioCtx = new AudioContext();
+    }
+
+    function playSound(type) {
+      if (!audioCtx) return;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      if (type === 'coin') {
+        osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.1);
+      } else if (type === 'crash') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+        osc.frequency.linearRampToValueAtTime(40, audioCtx.currentTime + 0.25);
+        gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.25);
+      } else if (type === 'upgrade') {
+        osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+        osc.frequency.linearRampToValueAtTime(700, audioCtx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+      }
+    }
+
+    // Game Variables
+    let isPaused = false;
+    let isGameOver = false;
+    let totalCoins = 0;
+    let penaltyPoints = 0;
+    let roadOffset = 0;
+    let screenShake = 0;
+
+    // Upgrades
+    let speedLevel = 1;
+    let shieldLevel = 1;
+
+    // Cycle / Player Object
+    const player = {
+      x: 165,
+      y: 470,
+      width: 30,
+      height: 60,
+      baseSpeed: 4,
+      invincibleTimer: 0,
+      moveLeft: false,
+      moveRight: false
+    };
+
+    // Obstacles and Coins Arrays
+    let obstacles = [];
+    let coins = [];
+
+    // Controls Handling (PC & Mobile)
+    window.addEventListener('keydown', (e) => {
+      initAudio();
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') player.moveLeft = true;
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') player.moveRight = true;
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') player.moveLeft = false;
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') player.moveRight = false;
+    });
+
+    const btnLeft = document.getElementById('btn-left');
+    const btnRight = document.getElementById('btn-right');
+
+    const handleTouchStart = (btn, dir) => {
+      btn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        initAudio();
+        if (dir === 'left') player.moveLeft = true;
+        if (dir === 'right') player.moveRight = true;
+      });
+      btn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        if (dir === 'left') player.moveLeft = false;
+        if (dir === 'right') player.moveRight = false;
+      });
+      btn.addEventListener('mousedown', () => {
+        initAudio();
+        if (dir === 'left') player.moveLeft = true;
+        if (dir === 'right') player.moveRight = true;
+      });
+      btn.addEventListener('mouseup', () => {
+        if (dir === 'left') player.moveLeft = false;
+        if (dir === 'right') player.moveRight = false;
+      });
+    };
+
+    handleTouchStart(btnLeft, 'left');
+    handleTouchStart(btnRight, 'right');
+
+    // Spawning logic
+    let frame = 0;
+    function spawnItems() {
+      frame++;
+      // Spawn obstacle (person/car)
+      if (frame % 85 === 0) {
+        const types = ['person', 'rock'];
+        obstacles.push({
+          x: Math.random() * (canvas.width - 50) + 10,
+          y: -50,
+          width: 30,
+          height: 35,
+          type: types[Math.floor(Math.random() * types.length)],
+          speed: 3 + Math.random() * 2
+        });
+      }
+
+      // Spawn coins
+      if (frame % 55 === 0) {
+        coins.push({
+          x: Math.random() * (canvas.width - 40) + 20,
+          y: -30,
+          radius: 12,
+          speed: 3.5
+        });
+      }
+    }
+
+    // Drawing Functions
+    function drawRoad() {
+      // Road Surface
+      ctx.fillStyle = '#333';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Sidewalks
+      ctx.fillStyle = '#27ae60';
+      ctx.fillRect(0, 0, 15, canvas.height);
+      ctx.fillRect(canvas.width - 15, 0, 15, canvas.height);
+
+      // Road lane markers (moving)
+      ctx.fillStyle = '#f1c40f';
+      roadOffset = (roadOffset + 4) % 40;
+      for (let y = -40 + roadOffset; y < canvas.height; y += 40) {
+        ctx.fillRect(canvas.width / 2 - 4, y, 8, 20);
+      }
+    }
+
+    function drawCycle(p) {
+      if (p.invincibleTimer > 0 && Math.floor(frame / 4) % 2 === 0) return; // Flash effect
+
+      ctx.save();
+      ctx.translate(p.x + p.width / 2, p.y + p.height / 2);
+
+      // Wheels
+      ctx.fillStyle = '#000';
+      ctx.fillRect(-6, -25, 12, 10); // Front Wheel
+      ctx.fillRect(-6, 15, 12, 10);  // Back Wheel
+
+      // Cycle Frame (Color changes with upgrade)
+      ctx.strokeStyle = shieldLevel > 1 ? '#00d2d3' : '#e74c3c';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(0, -18);
+      ctx.lineTo(0, 15);
+      ctx.stroke();
+
+      // Handlebars
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-14, -15);
+      ctx.lineTo(14, -15);
+      ctx.stroke();
+
+      // Cyclist Body / Helmet
+      ctx.fillStyle = speedLevel > 1 ? '#f39c12' : '#3498db';
+      ctx.beginPath();
+      ctx.arc(0, 0, 8, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    function drawObstacle(obs) {
+      ctx.save();
+      if (obs.type === 'person') {
+        // Pedestrian (মানুষ)
+        ctx.fillStyle = '#e67e22';
+        ctx.beginPath();
+        ctx.arc(obs.x + obs.width / 2, obs.y + 10, 8, 0, Math.PI * 2); // Head
+        ctx.fill();
+        ctx.fillStyle = '#9b59b6';
+        ctx.fillRect(obs.x + 5, obs.y + 18, obs.width - 10, obs.height - 18); // Body
+      } else {
+        // Rock/Obstacle
+        ctx.fillStyle = '#7f8c8d';
+        ctx.beginPath();
+        ctx.arc(obs.x + obs.width / 2, obs.y + obs.height / 2, obs.width / 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawCoin(c) {
+      ctx.save();
+      ctx.fillStyle = '#f1c40f';
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#d35400';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = '#b7950b';
+      ctx.font = 'bold 12px Arial';
+      ctx.fillText('$', c.x - 3.5, c.y + 4);
+      ctx.restore();
+    }
+
+    // Collision Detection
+    function checkCollisions() {
+      // Coins collision
+      for (let i = coins.length - 1; i >= 0; i--) {
+        let c = coins[i];
+        let distX = Math.abs(c.x - (player.x + player.width / 2));
+        let distY = Math.abs(c.y - (player.y + player.height / 2));
+
+        if (distX < (player.width / 2 + c.radius) && distY < (player.height / 2 + c.radius)) {
+          totalCoins += 1;
+          playSound('coin');
+          coins.splice(i, 1);
+          document.getElementById('coin-val').innerText = totalCoins;
+        }
+      }
+
+      // Obstacles collision
+      if (player.invincibleTimer <= 0) {
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+          let o = obstacles[i];
+          if (
+            player.x < o.x + o.width &&
+            player.x + player.width > o.x &&
+            player.y < o.y + o.height &&
+            player.y + player.height > o.y
+          ) {
+            // Hit!
+            playSound('crash');
+            screenShake = 15;
+            player.invincibleTimer = 60; // 1 second invulnerability
+
+            // Base deduction is 500 points. Shield reduces penalty
+            let damage = Math.max(250, 500 - (shieldLevel - 1) * 100);
+            penaltyPoints += damage;
+            document.getElementById('penalty-val').innerText = penaltyPoints;
+
+            // Trigger Game Over condition
+            if (penaltyPoints >= 5000) {
+              triggerGameOver();
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    function triggerGameOver() {
+      isGameOver = true;
+      document.getElementById('final-coins').innerText = totalCoins;
+      document.getElementById('gameOverModal').style.display = 'flex';
+    }
+
+    function restartGame() {
+      penaltyPoints = 0;
+      totalCoins = 0;
+      speedLevel = 1;
+      shieldLevel = 1;
+      player.x = 165;
+      obstacles = [];
+      coins = [];
+      isGameOver = false;
+      document.getElementById('penalty-val').innerText = '0';
+      document.getElementById('coin-val').innerText = '0';
+      document.getElementById('gameOverModal').style.display = 'none';
+    }
+
+    // Upgrades
+    function openShop() {
+      isPaused = true;
+      document.getElementById('shopModal').style.display = 'flex';
+    }
+
+    function closeShop() {
+      isPaused = false;
+      document.getElementById('shopModal').style.display = 'none';
+    }
+
+    function upgradeSpeed() {
+      if (totalCoins >= 15) {
+        totalCoins -= 15;
+        speedLevel += 1;
+        playSound('upgrade');
+        document.getElementById('coin-val').innerText = totalCoins;
+        document.getElementById('up-speed-btn').innerText = `গতি বাড়াও (লেভেল ${speedLevel})`;
+      } else {
+        alert("পর্যাপ্ত কয়েন নেই!");
+      }
+    }
+
+    function upgradeShield() {
+      if (totalCoins >= 20) {
+        totalCoins -= 20;
+        shieldLevel += 1;
+        playSound('upgrade');
+        document.getElementById('coin-val').innerText = totalCoins;
+        document.getElementById('up-shield-btn').innerText = `বর্ম/হেলমেট (লেভেল ${shieldLevel})`;
+      } else {
+        alert("পর্যাপ্ত কয়েন নেই!");
+      }
+    }
+
+    // Main Game Loop
+    function update() {
+      if (!isPaused && !isGameOver) {
+        // Player Movement
+        let currentSpeed = player.baseSpeed + (speedLevel - 1) * 1.5;
+        if (player.moveLeft && player.x > 18) player.x -= currentSpeed;
+        if (player.moveRight && player.x < canvas.width - player.width - 18) player.x += currentSpeed;
+
+        if (player.invincibleTimer > 0) player.invincibleTimer--;
+
+        // Update items
+        spawnItems();
+
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+          obstacles[i].y += obstacles[i].speed;
+          if (obstacles[i].y > canvas.height) obstacles.splice(i, 1);
+        }
+
+        for (let i = coins.length - 1; i >= 0; i--) {
+          coins[i].y += coins[i].speed;
+          if (coins[i].y > canvas.height) coins.splice(i, 1);
+        }
+
+        checkCollisions();
+      }
+
+      // Render
+      ctx.save();
+      if (screenShake > 0) {
+        ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
+        screenShake *= 0.85;
+        if (screenShake < 0.5) screenShake = 0;
+      }
+
+      drawRoad();
+      coins.forEach(drawCoin);
+      obstacles.forEach(drawObstacle);
+      drawCycle(player);
+
+      ctx.restore();
+
+      requestAnimationFrame(update);
+    }
+
+    // Start Game Loop
+    update();
+  </script>
+</body>
+</html>
